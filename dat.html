@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            canvas {
+                margin: auto;
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                right: 0;
+            }
+            html, body {
+                background-color: #222;
+                margin: 0;
+                padding: 0;
+            }
+        </style>
+        <script type="text/javascript" src="dat.gui.min.js"></script>
+    </head>
+    <body>
+        <canvas></canvas>
+        <script type="text/javascript">
+            /////////////////////////////////////////////////////////////
+            // Globals
+
+            var CIRCLE = Math.PI * 2;
+            var rAF =   window.requestAnimationFrame ||
+                        window.msRequestAnimationFrame ||
+                        window.mozRequestAnimationFrame ||
+                        window.oRequestAnimationFrame ||
+                        window.webkitRequestAnimationFrame;
+
+            var config = {
+                camera: {
+                    angle: Math.PI / 4,
+                    fov: Math.PI / 3,           // field-of-view
+                    moveSpeed: 2,
+                    turnSpeed: Math.PI / 6,
+                    viewDistance: 8,            // how far camera can see
+                    x: 4,
+                    y: 4
+                },
+
+                input: {
+                    left: 37,
+                    right: 39,
+                    forwards: 38,      // up
+                    backwards: 40      // down
+                },
+
+
+                map: {
+                    tiles: [
+                        1, 1, 1, 1, 1, 1, 1, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 0, 0, 0, 0, 0, 0, 1,
+                        1, 1, 1, 1, 1, 1, 1, 1,
+                    ],
+                    rows: 8,
+                    columns: 8,
+
+                    enableRandomMap: true
+                },
+
+                renderer: {
+                    colors: {
+                        background: '#FFFFFF',
+                        floor: '#469605',
+                        horizontal: '#00E7C7',
+                        shading: '#000000',
+                        sky: '#40C2D6',
+                        vertical: '#FF7800'
+                    },
+                    canvas: document.getElementsByTagName('canvas')[0],
+                    width: Math.round(window.innerWidth / 2),
+                    height: Math.round(window.innerHeight / 2),
+
+                    enableLighting: true,
+                    enableFloor: true,
+                    enableSky: true,
+                    enableWallColors: false,
+                    enableWallTextures: true
+                },
+
+                wall: {
+                    image: 'optimized-stone-wall.png',
+                    height: 1
+                }
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Controls
+
+            function Input (config) {
+                var input = this;
+
+                this.left = config.left;
+                this.right = config.right;
+                this.forwards = config.forwards;
+                this.backwards = config.backwards;
+
+                this.move = 0;
+                this.turn = 0;
+
+                document.addEventListener('keydown', function (event) {
+                    return input.onKeyDown(event);
+                }, false);
+                document.addEventListener('keyup', function (event) {
+                    return input.onKeyUp(event);
+                }, false);
+            }
+
+            Input.prototype.onKeyDown = function (event) {
+                var keyCode = event.keyCode;
+
+                if (keyCode === this.left) {
+                    this.turn = -1;
+                } else if (keyCode === this.right) {
+                    this.turn = 1;
+                } else if (keyCode === this.forwards) {
+                    this.move = 1;
+                } else if (keyCode === this.backwards) {
+                    this.move = -1;
+                }
+
+                return false;
+            };
+
+            Input.prototype.onKeyUp = function (event) {
+                var keyCode = event.keyCode;
+
+                if (keyCode === this.left || keyCode === this.right) {
+                    this.turn = 0;
+                } else if (keyCode === this.forwards || keyCode === this.backwards) {
+                    this.move = 0;
+                }
+
+                return false;
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Map
+
+            function Map (config) {
+                this.height = config.rows;
+                this.tiles = config.enableRandomMap ? this.getRandomMap(config.rows, config.columns) : config.tiles;
+                this.width = config.columns;
+
+                this.enableRandomMap = config.enableRandomMap;
+            }
+
+            Map.prototype.contains = function (point) {
+                return !(
+                    point.x < 0 || point.x >= this.width ||
+                    point.y < 0 || point.y >= this.height
+                );
+            };
+
+            Map.prototype.getRandomMap = function (rows, columns) {
+                var i;
+                var size = rows * columns;
+                var tiles = [];
+
+                for (i = 0; i < size; i++) {
+                    if (this.isBoundaryTile(i, size, columns) || Math.random() < 0.2) {
+                        tiles[i] = 1;
+                    } else {
+                        tiles[i] = 0;
+                    }
+                }
+
+                return tiles;
+            };
+
+            Map.prototype.isBoundaryTile = function (i, mapSize, rowSize) {
+                var firstRow = rowSize;
+                var lastRow = mapSize - rowSize;
+                var firstColumn = 0;
+                var lastColumn = rowSize - 1;
+
+                return (
+                    i < firstRow ||
+                    i >= lastRow ||
+                    i % rowSize === firstColumn ||
+                    i % rowSize === lastColumn
+                );
+            };
+
+            Map.prototype.isEmpty = function (x, y) {
+                var index = Math.floor(y) * this.width + Math.floor(x);
+                return index >= 0 && index < this.tiles.length && this.tiles[index] === 0;
+            };
+
+            Map.prototype.isWall = function (x, y) {
+                var index = Math.floor(y) * this.width + Math.floor(x);
+                return index >= 0 && index < this.tiles.length && this.tiles[index] > 0;
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Wall
+
+            function Wall (config) {
+                this.image = new Image();
+                this.image.src = config.image;
+                this.height = config.height;
+            }
+
+            Wall.prototype.getImageX = function (offset) {
+                return Math.floor(offset * this.image.width);
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Camera
+
+            function Camera (config, viewportWidth) {
+                this.angle = config.angle;
+                this.distanceToViewport = (viewportWidth / 2) / Math.tan(config.fov / 2);
+                this.fov = config.fov;
+                this.halfFov = config.fov / 2;
+                this.moveSpeed = config.moveSpeed;
+                this.pos = this.getStartingPos();
+                this.raycastStep = config.fov / viewportWidth;
+                this.turnSpeed = config.turnSpeed;
+                this.viewDistance = config.viewDistance;
+                this.viewDistanceSquared = config.viewDistance * config.viewDistance;
+                this.viewportWidth = viewportWidth;
+            }
+
+            Camera.prototype.cast = function (rise, run, x, y, offsetX, offsetY, inverted) {
+                var distanceToSquared = 0;
+                var ray = { x: 0, y: 0 };
+                var res = {
+                    collision: false,
+                    distanceTo: Number.MAX_VALUE,
+                    point: { x: 0, y: 0 },
+                    offset: 0
+                };
+                var stepX;
+                var stepY;
+                var tan = rise / run;
+
+                while (distanceToSquared < this.viewDistanceSquared && map.contains(ray)) {
+                    stepX = run > 0 ? Math.floor(x + 1) - x : Math.ceil(x - 1) - x;
+                    stepY = stepX * tan;
+
+                    x += stepX;
+                    y += stepY;
+
+                    // if we're casting down the vertical axis
+                    // we need to flip the coordinates to translate
+                    // into map space, so that we get the proper
+                    // map coordinates
+                    if (inverted) {
+                        ray.x = y;
+                        ray.y = x;
+                    } else {
+                        ray.x = x;
+                        ray.y = y;
+                    }
+
+                    distanceToSquared = this.distanceToSquared(ray);
+
+                    if (map.isWall(ray.x + offsetX, ray.y + offsetY)) {
+                        res.collision = true;
+                        res.distanceTo = Math.sqrt(distanceToSquared);
+                        res.point.x = ray.x;
+                        res.point.y = ray.y;
+
+                        // y is always the intercept axis
+                        res.offset = y - Math.floor(y);
+
+                        return res;
+                    }
+                }
+
+                return res;
+            };
+
+            Camera.prototype.distanceToSquared = function (point) {
+                var dX = point.x - this.pos.x;
+                var dY = point.y - this.pos.y;
+
+                return dX * dX + dY * dY;
+            };
+
+            Camera.prototype.drawColumn = function (res, theta, x) {
+                var colorType = res.point.x % 1 === 0 ? 'horizontal' : 'vertical';
+
+                // eliminate fishbowl effect
+                var correctedDistanceTo = res.distanceTo * Math.cos(theta); 
+                var projectedWallHeight = this.distanceToViewport * wall.height / correctedDistanceTo;
+
+                renderer.drawColumn(x, projectedWallHeight, colorType, res.offset);
+            };
+
+            Camera.prototype.getStartingPos = function () {
+                var x = Math.random() * map.width;
+                var y = Math.random() * map.height;
+
+                while (map.isWall(x, y)) {
+                    x = Math.random() * map.width;
+                    y = Math.random() * map.height;
+                }
+
+                return { x: x, y: y };
+            };
+
+            Camera.prototype.move = function (delta) {
+                var moveDelta = input.move * this.moveSpeed * delta;
+                var dx = this.pos.x + Math.cos(this.angle) * moveDelta;
+                var dy = this.pos.y + Math.sin(this.angle) * moveDelta;
+
+                // collision detection
+                if (map.isEmpty(dx, dy)) {
+                    this.pos.x = dx;
+                    this.pos.y = dy;
+                }
+            };
+
+            Camera.prototype.raycast = function (angle) {
+                var cos = Math.cos(angle);
+                var sin = Math.sin(angle);
+                var offsetTile;
+                var res;
+                var resHorizontal;
+                var resVertical;
+
+                // is ray not straight up or down?
+                if (cos !== 0) {
+
+                    // grab previous tile?
+                    offsetTile = cos < 0 ? -1 : 0;
+
+                    resHorizontal = this.cast(sin, cos, this.pos.x, this.pos.y, offsetTile, 0, false);
+                    if (resHorizontal.collision) {
+                        res = resHorizontal;
+                    }
+                }
+
+                // is ray not straight left or right?
+                if (sin !== 0) {
+
+                    // grab previous tile?
+                    offsetTile = sin < 0 ? -1 : 0;
+
+                    resVertical = this.cast(cos, sin, this.pos.y, this.pos.x, 0, offsetTile, true);
+                    if (resVertical.collision && resVertical.distanceTo < resHorizontal.distanceTo) {
+                        res = resVertical;
+                    }
+                }
+
+                return res;
+            };
+
+
+            Camera.prototype.render = function (delta) {
+                var angle = this.angle - this.halfFov;
+                var res;
+                var theta;
+                var x;
+
+                for (x = 0; x < this.viewportWidth; x++) {
+                    res = this.raycast(angle);
+
+                    if (res) {
+
+                        // calculate the angle between the projected line
+                        // and the center-of-view
+                        theta = angle - this.angle;
+                        this.drawColumn(res, theta, x);
+                    }
+
+                    angle += this.raycastStep;
+                }
+            };
+
+            Camera.prototype.rotate = function (delta) {
+                var theta = input.turn * this.turnSpeed * delta;
+                this.angle = (this.angle + theta * CIRCLE) % CIRCLE;
+            };
+
+            Camera.prototype.update = function (delta) {
+                this.rotate(delta);
+                this.move(delta);
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Renderer
+
+            function Renderer (config) {
+                this.canvas = config.canvas;
+                this.canvas.width = config.width;
+                this.canvas.height = config.height;
+                this.colors = config.colors;
+                this.ctx = config.canvas.getContext('2d');
+                this.width = config.width;
+                this.height = config.height;
+                this.halfWidth = config.width / 2;
+                this.halfHeight = config.height / 2;
+
+                this.enableLighting = config.enableLighting;
+                this.enableFloor = config.enableFloor;
+                this.enableSky = config.enableSky;
+                this.enableWallColors = config.enableWallColors;
+                this.enableWallTextures = config.enableWallTextures;
+            }
+
+            Renderer.prototype.clear = function () {
+                this.ctx.fillStyle = this.colors.background;
+                this.ctx.fillRect(0, 0, this.width, this.height);
+            };
+
+            Renderer.prototype.drawColumn = function (x, wallHeight, colorType, offset) {
+                var shading;
+                var y = Math.round(this.halfHeight - wallHeight / 2);
+
+                // draw wall slice
+                if (this.enableWallTextures) {
+                    this.ctx.drawImage(
+                        wall.image,
+                        wall.getImageX(offset),
+                        0,
+                        1,
+                        wall.image.height,
+                        x,
+                        y,
+                        1,
+                        wallHeight
+                    );
+                }
+
+                // draw wall as a solid color
+                if (this.enableWallColors) {
+                    this.ctx.fillStyle = this.colors[colorType];
+                    this.ctx.fillRect(x, y, 1, wallHeight);
+                }
+
+                if (this.enableLighting) {
+                    // draw wall shading
+                    // based on wall's distance from camera
+                    shading = Math.max(1 - wallHeight / this.halfHeight, 0);
+
+                    this.ctx.globalAlpha = shading;
+                    this.ctx.fillStyle = this.colors.shading;
+                    this.ctx.fillRect(x, y, 1, wallHeight);
+                    this.ctx.globalAlpha = 1;
+                }
+            };
+
+            Renderer.prototype.drawFloor = function () {
+                this.ctx.fillStyle = this.colors.floor;
+                this.ctx.fillRect(0, this.halfHeight, this.width, this.halfHeight);
+            };
+
+            Renderer.prototype.drawSky = function () {
+                this.ctx.fillStyle = this.colors.sky;
+                this.ctx.fillRect(0, 0, this.width, this.halfHeight);
+            };
+
+            /////////////////////////////////////////////////////////////
+            // Game
+
+            var input = new Input(config.input);
+            var map = new Map(config.map);
+            var renderer = new Renderer(config.renderer);
+            var wall = new Wall(config.wall);
+            var camera = new Camera(config.camera, config.renderer.width);
+
+            var lastTick = 0;
+
+            function frame (delta) {
+                var frameTime = (delta - lastTick) / 1000;
+
+                rAF(frame);
+
+                camera.update(frameTime);
+                renderer.clear();
+
+                if (renderer.enableFloor) {
+                    renderer.drawFloor();
+                }
+
+                if (renderer.enableSky) {
+                    renderer.drawSky();
+                }
+
+                camera.render(frameTime);
+
+                lastTick = delta;
+            }
+
+            // entry point!
+            rAF(frame);
+
+            /////////////////////////////////////////////////////////////
+            // Dat Gui
+
+            var gui = new dat.GUI();
+            var colorsFolder;
+            var cameraFolder;
+            var rendererFolder;
+            var wallFolder;
+            var fovController;
+            var viewDistanceController;
+
+            rendererFolder = gui.addFolder('Renderer');
+            rendererFolder.add(renderer, 'enableLighting');
+            rendererFolder.add(renderer, 'enableFloor');
+            rendererFolder.add(renderer, 'enableSky');
+            rendererFolder.add(renderer, 'enableWallTextures');
+            rendererFolder.add(renderer, 'enableWallColors');
+            rendererFolder.open();
+
+            colorsFolder = gui.addFolder('Colors - Must Enable Floor, Sky, Walls');
+            colorsFolder.addColor(renderer.colors, 'background');
+            colorsFolder.addColor(renderer.colors, 'floor');
+            colorsFolder.addColor(renderer.colors, 'horizontal');
+            colorsFolder.addColor(renderer.colors, 'shading');
+            colorsFolder.addColor(renderer.colors, 'sky');
+            colorsFolder.addColor(renderer.colors, 'vertical');
+            colorsFolder.open();
+
+            cameraFolder = gui.addFolder('Camera');
+            cameraFolder.add(camera, 'moveSpeed', 0, 10).step(0.25);
+            cameraFolder.add(camera, 'turnSpeed', 0, Math.PI).step(Math.PI / 20);
+            cameraFolder.add(camera, 'distanceToViewport', 1, 1000);
+            fovController = cameraFolder
+                .add(camera, 'fov', Math.PI / 45, Math.PI)
+                .step(Math.PI / 90);
+            viewDistanceController = cameraFolder
+                .add(camera, 'viewDistance', 1, 10)
+                .step(0.5);
+            cameraFolder.open();
+
+            fovController.onChange(function (value) {
+                camera.fov = value;
+                camera.halfFov = value / 2;
+                camera.raycastStep = value / camera.viewportWidth;
+            });
+
+            viewDistanceController.onChange(function (value) {
+                camera.viewDistance = value;
+                camera.viewDistanceSquared = value * value;
+            });
+
+            wallFolder = gui.addFolder('Wall');
+            wallFolder.add(wall, 'height', 0.25, 6).step(0.25);
+            wallFolder.open();
+
+        </script>
+    </body>
+</html>
