@@ -1,7 +1,7 @@
 Raycaster
 =========
 
-This is a simple raycaster engine written in JavaScript using the HTML5 Canvas. A live demo is [here](http://ninjaspankypants.com/raycaster/).
+This is a simple raycaster engine written in JavaScript using the HTML5 Canvas. A live demo is [here](http://quidmonkey.github.io/raycaster/).
 
 I use [dat.gui](https://code.google.com/p/dat-gui/) as my controller to manipulate the engine variables dynamically.
 
