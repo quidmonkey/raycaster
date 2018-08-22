@@ -16,6 +16,7 @@
                 padding: 0;
             }
         </style>
+        <script type="text/javascript" src="dat.gui.min.js"></script>
     </head>
     <body>
         <canvas></canvas>
@@ -69,21 +70,25 @@
                 renderer: {
                     colors: {
                         background: '#FFFFFF',
-                        horizontal: '#FF0000',
+                        floor: '#469605',
+                        horizontal: '#00E7C7',
                         shading: '#000000',
-                        vertical: '#00FF00'
+                        sky: '#40C2D6',
+                        vertical: '#FF7800'
                     },
                     canvas: document.getElementsByTagName('canvas')[0],
                     width: Math.round(window.innerWidth / 2),
                     height: Math.round(window.innerHeight / 2),
 
                     enableLighting: true,
+                    enableFloor: true,
+                    enableSky: true,
                     enableWallColors: false,
                     enableWallTextures: true
                 },
 
                 wall: {
-                    image: 'stone-wall.png',
+                    image: 'optimized-stone-wall.png',
                     height: 1
                 }
             };
@@ -399,6 +404,8 @@
                 this.halfHeight = config.height / 2;
 
                 this.enableLighting = config.enableLighting;
+                this.enableFloor = config.enableFloor;
+                this.enableSky = config.enableSky;
                 this.enableWallColors = config.enableWallColors;
                 this.enableWallTextures = config.enableWallTextures;
             }
@@ -445,6 +452,16 @@
                 }
             };
 
+            Renderer.prototype.drawFloor = function () {
+                this.ctx.fillStyle = this.colors.floor;
+                this.ctx.fillRect(0, this.halfHeight, this.width, this.halfHeight);
+            };
+
+            Renderer.prototype.drawSky = function () {
+                this.ctx.fillStyle = this.colors.sky;
+                this.ctx.fillRect(0, 0, this.width, this.halfHeight);
+            };
+
             /////////////////////////////////////////////////////////////
             // Game
 
@@ -463,6 +480,15 @@
 
                 camera.update(frameTime);
                 renderer.clear();
+
+                if (renderer.enableFloor) {
+                    renderer.drawFloor();
+                }
+
+                if (renderer.enableSky) {
+                    renderer.drawSky();
+                }
+
                 camera.render(frameTime);
 
                 lastTick = delta;
@@ -470,6 +496,62 @@
 
             // entry point!
             rAF(frame);
+
+            /////////////////////////////////////////////////////////////
+            // Dat Gui
+
+            var gui = new dat.GUI();
+            var colorsFolder;
+            var cameraFolder;
+            var rendererFolder;
+            var wallFolder;
+            var fovController;
+            var viewDistanceController;
+
+            rendererFolder = gui.addFolder('Renderer');
+            rendererFolder.add(renderer, 'enableLighting');
+            rendererFolder.add(renderer, 'enableFloor');
+            rendererFolder.add(renderer, 'enableSky');
+            rendererFolder.add(renderer, 'enableWallTextures');
+            rendererFolder.add(renderer, 'enableWallColors');
+            rendererFolder.open();
+
+            colorsFolder = gui.addFolder('Colors - Must Enable Floor, Sky, Walls');
+            colorsFolder.addColor(renderer.colors, 'background');
+            colorsFolder.addColor(renderer.colors, 'floor');
+            colorsFolder.addColor(renderer.colors, 'horizontal');
+            colorsFolder.addColor(renderer.colors, 'shading');
+            colorsFolder.addColor(renderer.colors, 'sky');
+            colorsFolder.addColor(renderer.colors, 'vertical');
+            colorsFolder.open();
+
+            cameraFolder = gui.addFolder('Camera');
+            cameraFolder.add(camera, 'moveSpeed', 0, 10).step(0.25);
+            cameraFolder.add(camera, 'turnSpeed', 0, Math.PI).step(Math.PI / 20);
+            cameraFolder.add(camera, 'distanceToViewport', 1, 1000);
+            fovController = cameraFolder
+                .add(camera, 'fov', Math.PI / 45, Math.PI)
+                .step(Math.PI / 90);
+            viewDistanceController = cameraFolder
+                .add(camera, 'viewDistance', 1, 10)
+                .step(0.5);
+            cameraFolder.open();
+
+            fovController.onChange(function (value) {
+                camera.fov = value;
+                camera.halfFov = value / 2;
+                camera.raycastStep = value / camera.viewportWidth;
+            });
+
+            viewDistanceController.onChange(function (value) {
+                camera.viewDistance = value;
+                camera.viewDistanceSquared = value * value;
+            });
+
+            wallFolder = gui.addFolder('Wall');
+            wallFolder.add(wall, 'height', 0.25, 6).step(0.25);
+            wallFolder.open();
+
         </script>
     </body>
 </html>
